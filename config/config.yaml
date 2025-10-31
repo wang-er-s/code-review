@@ -2,7 +2,7 @@
 
 git:
   # 工作仓库路径（用于审查，LLM可读取完整项目）
-  work_repo_path: "/home/git/test_work/test"
+  work_repo_path: "/home/git/xiuxian_work/xiuxian"
   
 review:
   # 文件审查规则
@@ -10,7 +10,7 @@ review:
     # C#代码文件审查
     - name: "csharp_code"
       extensions: [".cs"]
-      # path_pattern: "Assets/Scripts/**/*.cs"
+      path_pattern: "Assets/Scripts/**/*.cs"
       exclude_patterns: 
         - ".meta"
         - ".csproj"
