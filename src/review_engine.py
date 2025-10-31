@@ -72,7 +72,7 @@ class ReviewEngine:
         
         changed_files = self.git_handler.get_changed_files(old_rev, new_rev, self.file_rules)
         
-        if not changed_files:
+        if not changed_files or len(changed_files) == 0:
             logger.info("没有需要审查的文件变更")
             self._cache_commit(new_rev)
             return True
