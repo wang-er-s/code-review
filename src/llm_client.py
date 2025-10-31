@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class LLMClient:
     """LLM CLI工具封装，负责调用外部LLM命令行工具进行代码审查
     
-    支持 Kilo Code CLI 和其他通用 CLI 工具
+    支持 OpenAI Codex CLI 和其他通用 CLI 工具
     """
     
     def __init__(self, config: LLMConfig, project_root: str = ''):
@@ -33,9 +33,8 @@ class LLMClient:
         self.prompt_templates = config.prompt_templates
         self.project_root = project_root
         
-        # Kilo Code 特定配置
-        self.kilocode_mode = config.kilocode_mode
-        self.kilocode_model = config.kilocode_model
+        # Codex 特定配置
+        self.codex_model = config.codex_model
         
         self.temp_dir = Path('temp')
         self.temp_dir.mkdir(exist_ok=True)
@@ -43,8 +42,8 @@ class LLMClient:
         logger.info(f"LLM Client初始化: CLI={self.cli_path}, 类型={self.cli_type}")
         if self.project_root:
             logger.info(f"项目根目录: {self.project_root}")
-        if self.cli_type == 'kilocode':
-            logger.info(f"Kilo Code 模式: {self.kilocode_mode}")
+        if self.cli_type == 'codex':
+            logger.info(f"Codex 模型: {self.codex_model or '默认'}")
     
     def review_code(self, code_diff: str, file_path: str, review_type: str) -> Dict:
         """
@@ -125,20 +124,21 @@ class LLMClient:
         
         Args:
             input_file: 输入文件路径（包含prompt内容）
-            output_file: 输出文件路径（对于Kilo Code可能不使用）
+            output_file: 输出文件路径（对于某些CLI可能不使用）
             
         Returns:
             Dict: 解析后的审查结果
         """
-        if self.cli_type == 'kilocode':
-            return self._call_kilocode_cli(input_file)
+        if self.cli_type == 'codex':
+            return self._call_codex_cli(input_file)
         else:
             return self._call_generic_cli(input_file, output_file)
     
-    def _call_kilocode_cli(self, input_file: str) -> Dict:
-        return {'issues': [], 'summary': '无审查结果'}
+    def _call_codex_cli(self, input_file: str) -> Dict:
         """
-        调用 Kilo Code CLI
+        调用 OpenAI Codex CLI
+        
+        参考: https://developers.openai.com/codex/cli/
         
         Args:
             input_file: 包含prompt的文件路径
@@ -151,24 +151,20 @@ class LLMClient:
             with open(input_file, 'r', encoding='utf-8') as f:
                 prompt_content = f.read()
             
-            # 构建 Kilo Code CLI 命令
-            cmd_parts = [self.cli_path, '--auto']
+            # 构建 Codex CLI 命令
+            # 使用 exec 命令进行非交互式执行
+            cmd_parts = [self.cli_path, 'exec']
             
-            # 添加超时参数
-            if self.timeout:
-                cmd_parts.extend(['--timeout', str(self.timeout)])
+            # 添加模型参数（如果指定）
+            if self.codex_model:
+                cmd_parts.extend(['--model', self.codex_model])
             
-            # 添加工作区参数
-            if self.project_root:
-                cmd_parts.extend(['--workspace', self.project_root])
-            
-            # 添加模式参数
-            if self.kilocode_mode:
-                cmd_parts.extend(['--mode', self.kilocode_mode])
-            
-            logger.debug(f"执行 Kilo Code CLI: {' '.join(cmd_parts)}")
+            # 添加 prompt 作为参数（Codex exec 支持直接传递 prompt）
+            # 由于 prompt 可能很长，我们通过 stdin 传递
+            logger.debug(f"执行 Codex CLI: {' '.join(cmd_parts)} [prompt from stdin]")
             
             # 执行命令，通过stdin传递prompt
+            # Codex exec 会读取 stdin 作为 prompt
             result = subprocess.run(
                 cmd_parts,
                 input=prompt_content,
@@ -180,32 +176,81 @@ class LLMClient:
             )
             
             # 检查退出码
-            if result.returncode == 124:
-                logger.error(f"Kilo Code CLI 超时 ({self.timeout}秒)")
-                return self._create_error_result("LLM调用超时")
-            elif result.returncode != 0:
+            if result.returncode != 0:
                 error_msg = result.stderr if result.stderr else result.stdout
-                logger.error(f"Kilo Code CLI执行失败 (退出码 {result.returncode}): {error_msg}")
+                logger.error(f"Codex CLI执行失败 (退出码 {result.returncode}): {error_msg}")
                 return self._create_error_result(f"CLI执行失败: {error_msg[:500]}")
             
             # 解析输出
             output = result.stdout.strip()
             if not output:
-                logger.warning("Kilo Code CLI 未返回结果")
+                logger.warning("Codex CLI 未返回结果")
                 return {'issues': [], 'summary': '无审查结果'}
             
-            # 尝试从输出中提取JSON
-            return self._parse_kilocode_output(output)
+            # Codex 的输出可能是文本或 JSON，尝试解析
+            return self._parse_codex_output(output)
             
         except subprocess.TimeoutExpired:
-            logger.error(f"Kilo Code CLI 超时 ({self.timeout}秒)")
+            logger.error(f"Codex CLI 超时 ({self.timeout}秒)")
             return self._create_error_result("LLM调用超时")
         except FileNotFoundError:
-            logger.error(f"Kilo Code CLI 未找到: {self.cli_path}")
-            return self._create_error_result(f"CLI工具未找到: {self.cli_path}。请确保已安装: npm install -g @kilocode/cli")
+            logger.error(f"Codex CLI 未找到: {self.cli_path}")
+            return self._create_error_result(
+                f"CLI工具未找到: {self.cli_path}。请确保已安装: npm install -g @openai/codex 或 brew install codex"
+            )
         except Exception as e:
-            logger.error(f"调用 Kilo Code CLI 异常: {e}")
+            logger.error(f"调用 Codex CLI 异常: {e}")
             return self._create_error_result(str(e))
+    
+    def _parse_codex_output(self, output: str) -> Dict:
+        """
+        解析 Codex CLI 的输出
+        
+        Codex 的输出可能是：
+        1. 纯JSON格式
+        2. Markdown格式包含JSON代码块
+        3. 普通文本（需要转换为结构化格式）
+        
+        Args:
+            output: CLI输出文本
+            
+        Returns:
+            Dict: 解析后的审查结果
+        """
+        # 首先尝试直接解析JSON
+        try:
+            return json.loads(output)
+        except json.JSONDecodeError:
+            pass
+        
+        # 尝试从Markdown代码块中提取JSON
+        import re
+        json_patterns = [
+            r'```json\s*(\{.*?\})\s*```',  # ```json {...} ```
+            r'```\s*(\{.*?\})\s*```',      # ``` {...} ```
+        ]
+        
+        for pattern in json_patterns:
+            matches = re.findall(pattern, output, re.DOTALL)
+            for match in matches:
+                try:
+                    return json.loads(match)
+                except json.JSONDecodeError:
+                    continue
+        
+        # 尝试在整个输出中查找JSON对象（从第一个 { 到最后一个 }）
+        try:
+            start_idx = output.find('{')
+            end_idx = output.rfind('}')
+            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                json_str = output[start_idx:end_idx + 1]
+                return json.loads(json_str)
+        except (json.JSONDecodeError, ValueError):
+            pass
+        
+        # 如果找不到JSON，尝试从文本中提取结构化信息
+        logger.warning("无法从 Codex 输出中提取JSON，使用文本解析")
+        return self._parse_text_output(output)
     
     def _call_generic_cli(self, input_file: str, output_file: str) -> Dict:
         """
@@ -261,56 +306,6 @@ class LLMClient:
             logger.error(f"调用LLM CLI异常: {e}")
             return self._create_error_result(str(e))
     
-    def _parse_kilocode_output(self, output: str) -> Dict:
-        """
-        解析 Kilo Code CLI 的输出
-        
-        Kilo Code 的输出可能是：
-        1. 纯JSON格式
-        2. Markdown格式包含JSON代码块
-        3. 普通文本
-        
-        Args:
-            output: CLI输出文本
-            
-        Returns:
-            Dict: 解析后的审查结果
-        """
-        # 首先尝试直接解析JSON
-        try:
-            return json.loads(output)
-        except json.JSONDecodeError:
-            pass
-        
-        # 尝试从Markdown代码块中提取JSON
-        import re
-        json_patterns = [
-            r'```json\s*(\{.*?\})\s*```',  # ```json {...} ```
-            r'```\s*(\{.*?\})\s*```',      # ``` {...} ```
-        ]
-        
-        for pattern in json_patterns:
-            matches = re.findall(pattern, output, re.DOTALL)
-            for match in matches:
-                try:
-                    return json.loads(match)
-                except json.JSONDecodeError:
-                    continue
-        
-        # 尝试在整个输出中查找JSON对象（从第一个 { 到最后一个 }）
-        try:
-            start_idx = output.find('{')
-            end_idx = output.rfind('}')
-            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-                json_str = output[start_idx:end_idx + 1]
-                return json.loads(json_str)
-        except (json.JSONDecodeError, ValueError):
-            pass
-        
-        # 如果找不到JSON，尝试从文本中提取结构化信息
-        logger.warning("无法从 Kilo Code 输出中提取JSON，使用文本解析")
-        return self._parse_text_output(output)
-    
     def _create_error_result(self, error_msg: str) -> Dict:
         """创建错误结果"""
         return {
@@ -343,8 +338,8 @@ class LLMClient:
             logger.error("未配置LLM CLI路径")
             return False
         
-        if self.cli_type == 'kilocode':
-            # 对于 Kilo Code，检查命令是否在PATH中
+        if self.cli_type == 'codex':
+            # 对于 Codex，检查命令是否在PATH中
             try:
                 result = subprocess.run(
                     [self.cli_path, '--help'],
@@ -352,18 +347,18 @@ class LLMClient:
                     timeout=5,
                     text=True
                 )
-                if result.returncode == 0 or 'kilocode' in result.stderr.lower() or 'kilocode' in result.stdout.lower():
-                    logger.info("Kilo Code CLI 验证成功")
+                if result.returncode == 0 or 'codex' in result.stderr.lower() or 'codex' in result.stdout.lower():
+                    logger.info("Codex CLI 验证成功")
                     return True
                 else:
-                    logger.warning(f"Kilo Code CLI 可能未正确安装: {self.cli_path}")
+                    logger.warning(f"Codex CLI 可能未正确安装: {self.cli_path}")
                     return False
             except FileNotFoundError:
-                logger.error(f"Kilo Code CLI 未找到: {self.cli_path}")
-                logger.error("请安装: npm install -g @kilocode/cli")
+                logger.error(f"Codex CLI 未找到: {self.cli_path}")
+                logger.error("请安装: npm install -g @openai/codex 或 brew install codex")
                 return False
             except Exception as e:
-                logger.warning(f"验证 Kilo Code CLI 时出错: {e}")
+                logger.warning(f"验证 Codex CLI 时出错: {e}")
                 # 不强制失败，允许继续尝试
                 return True
         else:

@@ -28,15 +28,15 @@ review:
       review_type: "unity_asset"
 
 llm:
-  # LLM CLI工具类型: 'kilocode' 或 'generic'
-  # kilocode: 使用 Kilo Code CLI (推荐)
+  # LLM CLI工具类型: 'codex' 或 'generic'
+  # codex: 使用 OpenAI Codex CLI (推荐)
   # generic: 使用通用CLI工具（需要配置cli_args）
-  cli_type: "kilocode"
+  cli_type: "codex"
   
   # LLM CLI工具路径
-  # Kilo Code: "kilocode" (如果已全局安装) 或完整路径
+  # Codex: "codex" (如果已全局安装) 或完整路径
   # 通用CLI: 工具的可执行文件路径
-  cli_path: "kilocode"
+  cli_path: "codex"
   
   # CLI调用参数模板（仅当 cli_type=generic 时使用）
   # 可用占位符：{input_file}, {output_file}, {review_type}
@@ -45,9 +45,8 @@ llm:
   # 超时时间（秒）
   timeout: 300
   
-  # Kilo Code 特定配置（仅当 cli_type=kilocode 时生效）
-  kilocode_mode: "code"  # 可选: code, architect, debug, ask, orchestrator
-  # kilocode_model: ""    # 可选: 指定特定模型，留空使用默认模型
+  # Codex 特定配置（仅当 cli_type=codex 时生效）
+  codex_model: "gpt-5-codex"  # 可选: gpt-5-codex, gpt-5 等，留空使用默认模型
   
   # 审查提示词模板路径
   prompt_templates:

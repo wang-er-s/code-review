@@ -38,12 +38,11 @@ class ReviewConfig:
 class LLMConfig:
     """LLM配置"""
     cli_path: str
-    cli_type: str = "kilocode"  # 'kilocode' 或 'generic'
+    cli_type: str = "codex"  # 'codex' 或 'generic'
     cli_args: str = "--input {input_file} --output {output_file}"
     timeout: int = 300
     prompt_templates: Dict[str, str] = field(default_factory=dict)
-    kilocode_mode: str = "code"  # Kilo Code 模式: code, architect, debug, ask, orchestrator
-    kilocode_model: str = ""  # 可选：指定模型
+    codex_model: str = ""  # Codex 模型: gpt-5-codex, gpt-5 等（留空使用默认）
 
 
 @dataclass
