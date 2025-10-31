@@ -43,17 +43,17 @@ main() {
     while read oldrev newrev refname; do
         log_message "接收到push: $refname ($oldrev -> $newrev)"
         
-        # 过滤：只审查主分支或特定分支
-        # 如果要审查所有分支，注释掉下面的过滤逻辑
-        # case "$refname" in
-        #     refs/heads/main|refs/heads/master|refs/heads/develop)
-        #         # 审查这些分支
-        #         ;;
-        #     *)
-        #         log_message "分支 $refname 不在审查范围，跳过"
-        #         continue
-        #         ;;
-        # esac
+        # 分支过滤：只审查 MergeBattle 分支
+        # 如果要审查所有分支，可以注释掉下面的 case 语句，或者添加更多分支
+        case "$refname" in
+            refs/heads/MergeBattle)
+                log_message "分支 $refname 在审查范围，开始审查"
+                ;;
+            *)
+                log_message "分支 $refname 不在审查范围，跳过"
+                continue
+                ;;
+        esac
         
         # 调用Python审查服务
         if [ "$ASYNC_MODE" = "true" ]; then
