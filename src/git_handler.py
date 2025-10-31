@@ -1,8 +1,10 @@
 import git
 import os
 import fnmatch
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 import logging
+
+from config1 import FileRule
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +90,7 @@ class GitHandler:
             logger.error(f"获取commit信息失败 {commit_hash}: {e}")
             return {}
     
-    def get_changed_files(self, old_rev: str, new_rev: str, file_rules: List[Dict]) -> List[Dict]:
+    def get_changed_files(self, old_rev: str, new_rev: str, file_rules: List[FileRule]) -> List[Dict]:
         """
         获取变更的文件列表并分类
         
@@ -120,11 +122,11 @@ class GitHandler:
                     file_info = {
                         'path': file_path,
                         'change_type': change_type,
-                        'review_type': matched_rule['review_type'],
-                        'rule_name': matched_rule['name']
+                        'review_type': matched_rule.review_type,
+                        'rule_name': matched_rule.name
                     }
                     changed_files.append(file_info)
-                    logger.debug(f"匹配文件: {file_path} -> {matched_rule['name']}")
+                    logger.debug(f"匹配文件: {file_path} -> {matched_rule.name}")
             
             logger.info(f"找到 {len(changed_files)} 个需要审查的文件")
             return changed_files
@@ -133,44 +135,29 @@ class GitHandler:
             logger.error(f"获取变更文件列表失败: {e}")
             return []
     
-    def _match_file_rule(self, file_path: str, file_rules: List) -> Dict:
-        """匹配文件规则（支持字典和对象）"""
-        for rule in file_rules:
-            # 兼容字典和对象
-            if isinstance(rule, dict):
-                exclude_patterns = rule.get('exclude_patterns', [])
-                path_pattern = rule.get('path_pattern')
-                extensions = rule.get('extensions', [])
-                name = rule.get('name')
-                review_type = rule.get('review_type')
-            else:
-                # FileRule对象
-                exclude_patterns = rule.exclude_patterns
-                path_pattern = rule.path_pattern
-                extensions = rule.extensions
-                name = rule.name
-                review_type = rule.review_type
+    def _match_file_rule(self, file_path: str, file_rules: List[FileRule]) -> Optional[FileRule]:
+        """
+        匹配文件规则
+        
+        Args:
+            file_path: 文件路径
+            file_rules: 文件规则列表
             
-            if self._is_excluded(file_path, exclude_patterns):
+        Returns:
+            Optional[FileRule]: 匹配的规则对象，如果没有匹配则返回None
+        """
+        for rule in file_rules:
+            if self._is_excluded(file_path, rule.exclude_patterns):
                 continue
             
-            if path_pattern:
-                if fnmatch.fnmatch(file_path, path_pattern):
-                    return {
-                        'name': name,
-                        'review_type': review_type,
-                        'path_pattern': path_pattern,
-                        'extensions': extensions
-                    }
+            if rule.path_pattern:
+                if fnmatch.fnmatch(file_path, rule.path_pattern):
+                    return rule
             
-            if extensions:
+            if rule.extensions:
                 _, ext = os.path.splitext(file_path)
-                if ext in extensions:
-                    return {
-                        'name': name,
-                        'review_type': review_type,
-                        'extensions': extensions
-                    }
+                if ext in rule.extensions:
+                    return rule
         
         return None
     

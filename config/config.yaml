@@ -31,15 +31,26 @@ review:
       review_type: "unity_asset"
 
 llm:
-  # LLM CLI工具路径（当前使用Mock工具进行测试）
-  cli_path: "python"
+  # LLM CLI工具类型: 'kilocode' 或 'generic'
+  # kilocode: 使用 Kilo Code CLI (推荐)
+  # generic: 使用通用CLI工具（需要配置cli_args）
+  cli_type: "kilocode"
   
-  # CLI调用参数模板
+  # LLM CLI工具路径
+  # Kilo Code: "kilocode" (如果已全局安装) 或完整路径
+  # 通用CLI: 工具的可执行文件路径
+  cli_path: "kilocode"
+  
+  # CLI调用参数模板（仅当 cli_type=generic 时使用）
   # 可用占位符：{input_file}, {output_file}, {review_type}
   cli_args: "mock_llm_cli.py --input {input_file} --output {output_file}"
   
   # 超时时间（秒）
   timeout: 300
+  
+  # Kilo Code 特定配置（仅当 cli_type=kilocode 时生效）
+  kilocode_mode: "code"  # 可选: code, architect, debug, ask, orchestrator
+  # kilocode_model: ""    # 可选: 指定特定模型，留空使用默认模型
   
   # 审查提示词模板路径
   prompt_templates:
@@ -48,7 +59,7 @@ llm:
 
 feishu:
   # 飞书机器人Webhook地址
-  webhook_url: "https://open.feishu.cn/open-apis/bot/v2/hook/your-webhook-token"
+  webhook_url: "https://open.feishu.cn/open-apis/bot/v2/hook/21e1f845-97d0-4c31-a99a-67b18d01d7c6"
   
   # 消息发送配置
   enable: true

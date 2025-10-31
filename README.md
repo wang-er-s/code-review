@@ -73,7 +73,53 @@ feishu:
 
 ### 3. 配置LLM CLI工具
 
-你的LLM CLI工具需要满足以下接口规范：
+#### 方式1: 使用 Kilo Code CLI（推荐）
+
+**安装 Kilo Code CLI：**
+```bash
+npm install -g @kilocode/cli
+```
+
+**配置 `config.yaml`：**
+```yaml
+llm:
+  cli_type: "kilocode"          # 使用 Kilo Code CLI
+  cli_path: "kilocode"          # 如果全局安装，直接使用 "kilocode"
+  timeout: 300                   # 超时时间（秒）
+  kilocode_mode: "code"          # 模式: code, architect, debug, ask, orchestrator
+  # kilocode_model: ""           # 可选：指定特定模型
+```
+
+**Kilo Code CLI 优势：**
+- ✅ 支持数百种 LLM 模型，可随时切换
+- ✅ 支持多种模式（代码审查、架构设计、调试等）
+- ✅ 自动工作区感知，可读取项目上下文
+- ✅ 自主模式适合自动化场景
+
+**配置 Kilo Code：**
+```bash
+# 首次使用需要配置 API keys
+kilocode config
+
+# 或在交互式会话中使用
+kilocode
+/config
+```
+
+#### 方式2: 使用通用 CLI 工具
+
+如果你的LLM CLI工具需要自定义接口，可以配置为通用模式：
+
+**配置 `config.yaml`：**
+```yaml
+llm:
+  cli_type: "generic"           # 使用通用CLI
+  cli_path: "/path/to/your/cli" # CLI工具路径
+  cli_args: "--input {input_file} --output {output_file}"
+  timeout: 300
+```
+
+**接口规范：**
 
 **输入：**
 - 通过 `--input` 参数接收文本文件路径
@@ -272,22 +318,62 @@ ASYNC_MODE=false  # 同步
 
 ### LLM调用失败
 
-1. 检查CLI工具路径：
+#### Kilo Code CLI 故障排查
+
+1. **检查 Kilo Code 是否安装：**
+   ```bash
+   which kilocode
+   kilocode --version
+   ```
+
+2. **如果未安装，执行安装：**
+   ```bash
+   npm install -g @kilocode/cli
+   ```
+
+3. **检查 Kilo Code 配置：**
+   ```bash
+   kilocode config
+   # 确保已配置 API keys
+   ```
+
+4. **手动测试 Kilo Code：**
+   ```bash
+   echo "请审查这段代码: function test() { return 1; }" | kilocode --auto --timeout 60
+   ```
+
+5. **检查超时设置（config.yaml）：**
+   ```yaml
+   llm:
+     timeout: 300  # 增加超时时间
+   ```
+
+6. **检查工作区路径：**
+   ```yaml
+   llm:
+     # 确保 project_root 在配置中正确设置（自动从 git.work_repo_path 获取）
+   ```
+
+#### 通用 CLI 故障排查
+
+1. **检查CLI工具路径：**
    ```bash
    ls -l /path/to/your/llm-cli
    ```
 
-2. 手动测试CLI：
+2. **手动测试CLI：**
    ```bash
    echo "测试内容" > /tmp/test.txt
    /path/to/your/llm-cli --input /tmp/test.txt --output /tmp/result.json
    cat /tmp/result.json
    ```
 
-3. 检查超时设置（config.yaml）：
+3. **检查配置：**
    ```yaml
    llm:
-     timeout: 300  # 增加超时时间
+     cli_type: "generic"  # 确保类型正确
+     cli_path: "/path/to/your/cli"
+     cli_args: "--input {input_file} --output {output_file}"
    ```
 
 ### 飞书消息未收到

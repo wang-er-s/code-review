@@ -4,18 +4,26 @@ import logging
 from typing import Dict, List
 from datetime import datetime
 
+from config1 import FeishuConfig
+
 logger = logging.getLogger(__name__)
 
 
 class FeishuClient:
     """飞书消息发送客户端"""
     
-    def __init__(self, config: Dict):
-        self.webhook_url = config.get('webhook_url', '')
-        self.enable = config.get('enable', True)
-        self.mention_all = config.get('mention_all', False)
-        self.show_code_snippet = config.get('show_code_snippet', True)
-        self.max_snippet_lines = config.get('max_snippet_lines', 10)
+    def __init__(self, config: FeishuConfig):
+        """
+        初始化飞书客户端
+        
+        Args:
+            config: 飞书配置对象
+        """
+        self.webhook_url = config.webhook_url
+        self.enable = config.enable
+        self.mention_all = config.mention_all
+        self.show_code_snippet = config.show_code_snippet
+        self.max_snippet_lines = config.max_snippet_lines
         
         logger.info(f"飞书客户端初始化: enable={self.enable}")
     
