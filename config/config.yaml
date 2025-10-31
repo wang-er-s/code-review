@@ -1,0 +1,82 @@
+# Git代码审查服务配置文件
+
+git:
+  # Bare Git仓库路径（接收push）
+  bare_repo_path: "E:/git-rep/my-project.git"
+  
+  # 工作仓库路径（用于审查，LLM可读取完整项目）
+  work_repo_path: "E:/git-rep/my-project-work"
+  
+review:
+  # 文件审查规则
+  file_rules:
+    # C#代码文件审查
+    - name: "csharp_code"
+      extensions: [".cs"]
+      path_pattern: "Assets/Scripts/**/*.cs"
+      exclude_patterns: 
+        - ".meta"
+        - ".csproj"
+        - "*.Designer.cs"
+        - "*.g.cs"
+      max_file_size: 10000  # 单文件最大行数
+      review_type: "code"
+      
+    # Unity Asset配置文件审查
+    - name: "unity_asset"
+      path_pattern: "Assets/Config/Unity/**/*.asset"
+      extensions: [".asset"]
+      exclude_patterns: []
+      max_file_size: 5000
+      review_type: "unity_asset"
+
+llm:
+  # LLM CLI工具路径（当前使用Mock工具进行测试）
+  cli_path: "python"
+  
+  # CLI调用参数模板
+  # 可用占位符：{input_file}, {output_file}, {review_type}
+  cli_args: "mock_llm_cli.py --input {input_file} --output {output_file}"
+  
+  # 超时时间（秒）
+  timeout: 300
+  
+  # 审查提示词模板路径
+  prompt_templates:
+    code: "config/prompts/code_review.txt"
+    unity_asset: "config/prompts/asset_review.txt"
+
+feishu:
+  # 飞书机器人Webhook地址
+  webhook_url: "https://open.feishu.cn/open-apis/bot/v2/hook/your-webhook-token"
+  
+  # 消息发送配置
+  enable: true
+  mention_all: false  # 是否@所有人
+  
+  # 消息格式配置
+  show_code_snippet: true
+  max_snippet_lines: 10
+
+logging:
+  # 日志级别: DEBUG, INFO, WARNING, ERROR
+  level: "INFO"
+  
+  # 日志文件路径
+  file: "logs/review.log"
+  
+  # 日志保留天数
+  retention_days: 30
+
+# 高级配置
+advanced:
+  # 是否启用结果缓存（相同commit不重复审查）
+  enable_cache: true
+  cache_file: "temp/review_cache.json"
+  
+  # 单次提交最大审查文件数（防止大批量提交消耗过多资源）
+  max_files_per_commit: 50
+  
+  # 是否在LLM调用失败时继续处理其他文件
+  continue_on_error: true
+

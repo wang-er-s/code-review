@@ -1,0 +1,85 @@
+#!/bin/bash
+#
+# Git post-receive hook - 代码审查触发器
+#
+# 安装方法:
+#   1. 复制此文件到bare仓库的hooks目录: /path/to/repo.git/hooks/post-receive
+#   2. 添加执行权限: chmod +x /path/to/repo.git/hooks/post-receive
+#   3. 修改下方配置路径
+#
+
+# ==================== 配置区域 ====================
+
+# Python解释器路径
+PYTHON="/usr/bin/python3"
+
+# 代码审查服务根目录（绝对路径）
+REVIEW_SERVICE_DIR="/path/to/MergeBattle/Unity/Hooks"
+
+# 是否启用审查（设为 false 可临时禁用）
+ENABLE_REVIEW=true
+
+# 是否异步执行（true: 后台执行不阻塞push, false: 同步执行）
+ASYNC_MODE=true
+
+# 审查日志文件
+LOG_FILE="$REVIEW_SERVICE_DIR/logs/hook.log"
+
+# ==================================================
+
+# 日志函数
+log_message() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE"
+}
+
+# 主逻辑
+main() {
+    if [ "$ENABLE_REVIEW" != "true" ]; then
+        log_message "代码审查已禁用，跳过"
+        exit 0
+    fi
+    
+    # 读取push的引用信息
+    while read oldrev newrev refname; do
+        log_message "接收到push: $refname ($oldrev -> $newrev)"
+        
+        # 过滤：只审查主分支或特定分支
+        # 如果要审查所有分支，注释掉下面的过滤逻辑
+        # case "$refname" in
+        #     refs/heads/main|refs/heads/master|refs/heads/develop)
+        #         # 审查这些分支
+        #         ;;
+        #     *)
+        #         log_message "分支 $refname 不在审查范围，跳过"
+        #         continue
+        #         ;;
+        # esac
+        
+        # 调用Python审查服务
+        if [ "$ASYNC_MODE" = "true" ]; then
+            # 异步模式：后台执行，不阻塞push
+            log_message "启动异步审查任务"
+            nohup "$PYTHON" "$REVIEW_SERVICE_DIR/src/main.py" "$oldrev" "$newrev" "$refname" >> "$LOG_FILE" 2>&1 &
+        else
+            # 同步模式：等待审查完成
+            log_message "启动同步审查任务"
+            "$PYTHON" "$REVIEW_SERVICE_DIR/src/main.py" "$oldrev" "$newrev" "$refname" >> "$LOG_FILE" 2>&1
+            
+            if [ $? -ne 0 ]; then
+                log_message "审查失败，但不阻止push"
+                # 注意：即使审查失败也不能返回非0，否则会拒绝push
+            fi
+        fi
+        
+        log_message "审查任务已启动"
+    done
+    
+    exit 0
+}
+
+# 创建日志目录
+mkdir -p "$(dirname "$LOG_FILE")"
+
+# 执行主逻辑
+main
+
