@@ -14,7 +14,7 @@
 PYTHON="python3"
 
 # 代码审查服务根目录（绝对路径）
-REVIEW_SERVICE_DIR="/path/to/MergeBattle/Unity/Hooks"
+REVIEW_SERVICE_DIR="/home/git/code-review"
 
 # 是否启用审查（设为 false 可临时禁用）
 ENABLE_REVIEW=true
