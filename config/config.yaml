@@ -1,11 +1,8 @@
 # Git代码审查服务配置文件
 
 git:
-  # Bare Git仓库路径（接收push）
-  bare_repo_path: "E:/git-rep/my-project.git"
-  
   # 工作仓库路径（用于审查，LLM可读取完整项目）
-  work_repo_path: "E:/git-rep/my-project-work"
+  work_repo_path: "/home/git/test_work/test"
   
 review:
   # 文件审查规则
@@ -13,7 +10,7 @@ review:
     # C#代码文件审查
     - name: "csharp_code"
       extensions: [".cs"]
-      path_pattern: "Assets/Scripts/**/*.cs"
+      # path_pattern: "Assets/Scripts/**/*.cs"
       exclude_patterns: 
         - ".meta"
         - ".csproj"

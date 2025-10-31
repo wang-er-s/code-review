@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 配置类定义
 
@@ -24,7 +25,6 @@ class FileRule:
 @dataclass
 class GitConfig:
     """Git仓库配置"""
-    bare_repo_path: str  # Bare仓库路径（接收push）
     work_repo_path: str  # 工作仓库路径（用于审查和读取文档）
 
 
@@ -105,9 +105,6 @@ class Config:
         errors = []
         
         # 验证Git仓库路径
-        if not Path(self.git.bare_repo_path).exists():
-            errors.append(f"Bare仓库路径不存在: {self.git.bare_repo_path}")
-        
         if not Path(self.git.work_repo_path).exists():
             errors.append(f"工作仓库路径不存在: {self.git.work_repo_path}")
         

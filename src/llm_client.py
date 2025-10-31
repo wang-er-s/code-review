@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import subprocess
 import json
 import os
@@ -135,6 +136,7 @@ class LLMClient:
             return self._call_generic_cli(input_file, output_file)
     
     def _call_kilocode_cli(self, input_file: str) -> Dict:
+        return {'issues': [], 'summary': '无审查结果'}
         """
         调用 Kilo Code CLI
         

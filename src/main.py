@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 Git代码审查服务主入口
 
@@ -19,7 +20,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from review_engine import ReviewEngine
-from config import Config
+from config1 import Config
 
 
 def setup_logging(config: Config):
