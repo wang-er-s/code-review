@@ -1,4 +1,4 @@
-# Git代码审查服务配置文件
+# Git代码审查服务配置文件（服务器端）
 
 git:
   # 工作仓库路径（用于审查，LLM可读取完整项目）
@@ -86,4 +86,16 @@ advanced:
   
   # 是否在LLM调用失败时继续处理其他文件
   continue_on_error: true
+
+# 审查服务器配置
+review_server:
+  # 监听地址（0.0.0.0表示监听所有网络接口）
+  host: "0.0.0.0"
+  
+  # 监听端口
+  port: 5000
+  
+  # 要审查的分支列表（空列表表示审查所有分支）
+  review_branches:
+    - "MergeBattle"
 

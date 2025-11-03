@@ -4,6 +4,7 @@ import json
 import os
 import logging
 import shlex
+import re
 from typing import Dict, List, Optional
 from pathlib import Path
 
@@ -45,13 +46,12 @@ class LLMClient:
         if self.cli_type == 'codex':
             logger.info(f"Codex 模型: {self.codex_model or '默认'}")
     
-    def review_code(self, code_diff: str, file_path: str, review_type: str) -> Dict:
+    def review_code(self, code_diff: str, review_type: str = 'code') -> Dict:
         """
         调用LLM进行代码审查
         
         Args:
-            code_diff: 代码diff内容
-            file_path: 文件路径
+            code_diff: 代码diff内容（包含需要审查的内容，如果是批量审查，内容中已包含文件路径信息）
             review_type: 审查类型 (code/unity_asset)
             
         Returns:
@@ -59,29 +59,24 @@ class LLMClient:
         """
         try:
             prompt = self._build_prompt(code_diff, review_type)
-            
-            input_file = self.temp_dir / f"input_{os.getpid()}_{hash(file_path)}.txt"
-            output_file = self.temp_dir / f"output_{os.getpid()}_{hash(file_path)}.json"
-            
-            with open(input_file, 'w', encoding='utf-8') as f:
-                f.write(prompt)
-            
-            result = self._call_llm_cli(str(input_file), str(output_file))
-            
-            try:
-                input_file.unlink()
-                output_file.unlink(missing_ok=True)
-            except:
-                pass
-            
+            # 直接传递prompt内容，不需要创建临时文件
+            result = self._call_llm_cli(prompt)
             return result
             
         except Exception as e:
-            logger.error(f"LLM审查失败 {file_path}: {e}")
+            # 尝试提取文件路径用于错误信息
+            try:
+                file_match = re.search(r'文件:\s*([^\n]+)', code_diff)
+                identifier = file_match.group(1).strip() if file_match else "未知文件"
+            except:
+                identifier = "未知文件"
+            logger.error(f"LLM审查失败 {identifier}: {e}")
             return {
+                'success': False,  # 标识这是一个错误结果
+                'error': True,      # 标识这是一个系统错误
                 'issues': [{
                     'severity': 'error',
-                    'file': file_path,
+                    'file': identifier,
                     'line': 0,
                     'message': f'LLM调用失败: {str(e)}',
                     'category': '系统错误'
@@ -118,39 +113,33 @@ class LLMClient:
         return result
     
 
-    def _call_llm_cli(self, input_file: str, output_file: str) -> Dict:
+    def _call_llm_cli(self, prompt_content: str) -> Dict:
         """
         调用LLM CLI工具
         
         Args:
-            input_file: 输入文件路径（包含prompt内容）
-            output_file: 输出文件路径（对于某些CLI可能不使用）
+            prompt_content: prompt内容字符串
             
         Returns:
             Dict: 解析后的审查结果
         """
         if self.cli_type == 'codex':
-            return self._call_codex_cli(input_file)
-        else:
-            return self._call_generic_cli(input_file, output_file)
+            return self._call_codex_cli(prompt_content)
+        raise Exception("不支持的CLI类型: " + self.cli_type)
     
-    def _call_codex_cli(self, input_file: str) -> Dict:
+    def _call_codex_cli(self, prompt_content: str) -> Dict:
         """
         调用 OpenAI Codex CLI
         
         参考: https://developers.openai.com/codex/cli/
         
         Args:
-            input_file: 包含prompt的文件路径
+            prompt_content: prompt内容字符串
             
         Returns:
             Dict: 解析后的审查结果
         """
         try:
-            # 读取prompt内容
-            with open(input_file, 'r', encoding='utf-8') as f:
-                prompt_content = f.read()
-            
             # 构建 Codex CLI 命令
             # 使用 exec 命令进行非交互式执行
             cmd_parts = [self.cli_path, 'exec']
@@ -159,8 +148,7 @@ class LLMClient:
             if self.codex_model:
                 cmd_parts.extend(['--model', self.codex_model])
             
-            # 添加 prompt 作为参数（Codex exec 支持直接传递 prompt）
-            # 由于 prompt 可能很长，我们通过 stdin 传递
+            # 通过 stdin 传递 prompt
             logger.debug(f"执行 Codex CLI: {' '.join(cmd_parts)} [prompt from stdin]")
             
             # 执行命令，通过stdin传递prompt
@@ -185,10 +173,14 @@ class LLMClient:
             output = result.stdout.strip()
             if not output:
                 logger.warning("Codex CLI 未返回结果")
-                return {'issues': [], 'summary': '无审查结果'}
+                return {'success': True, 'issues': [], 'summary': '无审查结果'}
             
             # Codex 的输出可能是文本或 JSON，尝试解析
-            return self._parse_codex_output(output)
+            result_dict = self._parse_codex_output(output)
+            # 确保正常结果有 success 字段
+            if 'success' not in result_dict:
+                result_dict['success'] = True
+            return result_dict
             
         except subprocess.TimeoutExpired:
             logger.error(f"Codex CLI 超时 ({self.timeout}秒)")
@@ -251,64 +243,12 @@ class LLMClient:
         # 如果找不到JSON，尝试从文本中提取结构化信息
         logger.warning("无法从 Codex 输出中提取JSON，使用文本解析")
         return self._parse_text_output(output)
-    
-    def _call_generic_cli(self, input_file: str, output_file: str) -> Dict:
-        """
-        调用通用CLI工具（原有实现）
-        
-        Args:
-            input_file: 输入文件路径
-            output_file: 输出文件路径
-            
-        Returns:
-            Dict: 解析后的审查结果
-        """
-        try:
-            args = self.cli_args.format(
-                input_file=input_file,
-                output_file=output_file
-            )
-            
-            cmd = f"{self.cli_path} {args}"
-            logger.debug(f"执行LLM CLI: {cmd}")
-            
-            result = subprocess.run(
-                cmd,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=self.timeout,
-                encoding='utf-8'
-            )
-            
-            if result.returncode != 0:
-                logger.error(f"LLM CLI执行失败: {result.stderr}")
-                return self._create_error_result(f"CLI执行失败: {result.stderr}")
-            
-            if os.path.exists(output_file):
-                with open(output_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            
-            if result.stdout.strip():
-                try:
-                    return json.loads(result.stdout)
-                except json.JSONDecodeError:
-                    logger.warning("CLI输出不是有效JSON，尝试从文本提取")
-                    return self._parse_text_output(result.stdout)
-            
-            logger.warning("LLM CLI未返回结果")
-            return {'issues': [], 'summary': '无审查结果'}
-            
-        except subprocess.TimeoutExpired:
-            logger.error(f"LLM CLI超时 ({self.timeout}秒)")
-            return self._create_error_result(f"LLM调用超时")
-        except Exception as e:
-            logger.error(f"调用LLM CLI异常: {e}")
-            return self._create_error_result(str(e))
-    
+   
     def _create_error_result(self, error_msg: str) -> Dict:
         """创建错误结果"""
         return {
+            'success': False,  # 标识这是一个错误结果
+            'error': True,     # 标识这是一个系统错误
             'issues': [{
                 'severity': 'error',
                 'file': '',
@@ -322,6 +262,7 @@ class LLMClient:
     def _parse_text_output(self, text: str) -> Dict:
         """尝试从文本输出中提取审查结果"""
         return {
+            'success': True,  # 文本输出也算成功（虽然可能不理想）
             'issues': [{
                 'severity': 'info',
                 'file': '',

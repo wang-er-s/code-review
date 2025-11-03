@@ -82,42 +82,26 @@ class ReviewEngine:
             return True
         
         # 将文件按审查类型分组
-        code_files = []
-        other_files = []
+        files_by_type = {}
         
         for file_info in changed_files:
-            if file_info['review_type'] == 'code':
-                code_files.append(file_info)
-            else:
-                other_files.append(file_info)
+            review_type = file_info['review_type']
+            if review_type not in files_by_type:
+                files_by_type[review_type] = []
+            files_by_type[review_type].append(file_info)
         
         review_results = []
         success_count = 0
         
-        # 批量审查所有代码文件（cs文件）
-        if code_files:
+        # 按类型批量审查文件（每种类型一起审查）
+        for review_type, file_list in files_by_type.items():
             try:
-                logger.info(f"批量审查 {len(code_files)} 个代码文件")
-                code_results = self._review_multiple_code_files(old_rev, new_rev, code_files)
-                review_results.extend(code_results)
-                success_count += sum(1 for r in code_results if r.get('success', False))
+                logger.info(f"批量审查 {len(file_list)} 个{review_type}类型文件")
+                type_results = self._review_multiple_files(old_rev, new_rev, file_list, review_type)
+                review_results.extend(type_results)
+                success_count += sum(1 for r in type_results if r.get('success', False))
             except Exception as e:
-                logger.error(f"批量审查代码文件失败: {e}")
-                if not self.continue_on_error:
-                    self.feishu_client.send_error_notification(str(e), commit_info)
-                    return False
-        
-        # 单独审查其他类型的文件（如asset）
-        for file_info in other_files:
-            try:
-                result = self._review_single_file(old_rev, new_rev, file_info)
-                review_results.append(result)
-                
-                if result.get('success', False):
-                    success_count += 1
-                    
-            except Exception as e:
-                logger.error(f"审查文件失败 {file_info['path']}: {e}")
+                logger.error(f"批量审查{review_type}类型文件失败: {e}")
                 if not self.continue_on_error:
                     self.feishu_client.send_error_notification(str(e), commit_info)
                     return False
@@ -126,18 +110,23 @@ class ReviewEngine:
         
         self.feishu_client.send_review_report(commit_info, review_results)
         
-        self._cache_commit(new_rev)
+        # 只有当所有文件都审查成功时才缓存（避免缓存失败的审查结果）
+        if success_count == len(changed_files):
+            self._cache_commit(new_rev)
+        else:
+            logger.warning(f"审查未完全成功 ({success_count}/{len(changed_files)})，不缓存结果")
         
         return success_count > 0
     
-    def _review_multiple_code_files(self, old_rev: str, new_rev: str, file_list: List[Dict]) -> List[Dict]:
+    def _review_multiple_files(self, old_rev: str, new_rev: str, file_list: List[Dict], review_type: str) -> List[Dict]:
         """
-        批量审查多个代码文件（所有cs文件一起审查）
+        批量审查多个同类型文件（同类型文件一起审查）
         
         Args:
             old_rev: 旧版本
             new_rev: 新版本
-            file_list: 文件信息列表
+            file_list: 文件信息列表（必须是同一review_type）
+            review_type: 审查类型 (code/unity_asset等)
             
         Returns:
             List[Dict]: 审查结果列表
@@ -166,7 +155,8 @@ class ReviewEngine:
                 continue
             
             # 获取文件内容
-            content = self._get_code_content(old_rev, new_rev, file_path, change_type)
+            content = self._get_file_content(old_rev, new_rev, file_path, change_type, review_type)
+            
             if not content:
                 logger.warning(f"无法获取文件内容: {file_path}")
                 continue
@@ -182,7 +172,7 @@ class ReviewEngine:
             valid_files.append(file_info)
         
         if not valid_files:
-            logger.warning("没有有效的代码文件需要审查")
+            logger.warning(f"没有有效的{review_type}类型文件需要审查")
             return []
         
         # 合并所有文件内容
@@ -190,10 +180,7 @@ class ReviewEngine:
         
         # 添加整体说明
         header = f"""
-{'='*80}
-批量代码审查
-{'='*80}
-本次审查包含 {len(valid_files)} 个相关的代码文件，这些文件功能相关联，请整体分析：
+本次审查包含 {len(valid_files)} 个相关的文件，这些文件功能相关联，请整体分析：
 
 文件列表：
 """
@@ -205,12 +192,22 @@ class ReviewEngine:
         combined_content = header + combined_content
         
         # 调用LLM进行批量审查
-        logger.info(f"发送 {len(valid_files)} 个代码文件进行批量审查")
+        logger.info(f"发送 {len(valid_files)} 个{review_type}类型文件进行批量审查")
         review_result = self.llm_client.review_code(
             combined_content, 
-            f"批量审查({len(valid_files)}个文件)", 
-            'code'
+            review_type=review_type
         )
+        
+        # 检查是否是错误结果
+        if review_result.get('error', False) or not review_result.get('success', True):
+            logger.error(f"批量审查失败: {review_result.get('summary', '未知错误')}")
+            # 返回错误结果
+            return [{
+                'file': f'批量审查({review_type})',
+                'review_type': review_type,
+                'success': False,
+                'result': review_result
+            }]
         
         # 解析审查结果，尝试将问题分配到对应的文件
         issues = review_result.get('issues', [])
@@ -251,7 +248,7 @@ class ReviewEngine:
             
             results.append({
                 'file': file_path,
-                'review_type': 'code',
+                'review_type': review_type,
                 'success': True,
                 'result': {
                     'issues': file_issues,
@@ -263,7 +260,7 @@ class ReviewEngine:
         if unassigned_issues:
             results.append({
                 'file': '整体评价',
-                'review_type': 'code',
+                'review_type': review_type,
                 'success': True,
                 'result': {
                     'issues': unassigned_issues,
@@ -325,10 +322,7 @@ class ReviewEngine:
             }
         
         # 获取文件内容
-        if review_type == 'unity_asset':
-            diff_content = self._get_asset_content(old_rev, new_rev, file_path, change_type)
-        else:
-            diff_content = self._get_code_content(old_rev, new_rev, file_path, change_type)
+        diff_content = self._get_file_content(old_rev, new_rev, file_path, change_type, review_type)
         
         if not diff_content:
             logger.warning(f"无法获取文件内容: {file_path}")
@@ -338,7 +332,17 @@ class ReviewEngine:
                 'result': {'issues': [], 'summary': '无法获取文件内容'}
             }
         
-        review_result = self.llm_client.review_code(diff_content, file_path, review_type)
+        review_result = self.llm_client.review_code(diff_content, review_type)
+        
+        # 检查是否是错误结果
+        if review_result.get('error', False) or not review_result.get('success', True):
+            logger.error(f"文件审查失败 {file_path}: {review_result.get('summary', '未知错误')}")
+            return {
+                'file': file_path,
+                'review_type': review_type,
+                'success': False,
+                'result': review_result
+            }
         
         for issue in review_result.get('issues', []):
             if not issue.get('file'):
@@ -351,78 +355,64 @@ class ReviewEngine:
             'result': review_result
         }
     
-    def _get_code_content(self, old_rev: str, new_rev: str, file_path: str, change_type: str) -> str:
+    def _get_file_content(self, old_rev: str, new_rev: str, file_path: str, change_type: str, review_type: str = 'code') -> str:
         """
-        获取代码文件内容
+        获取文件内容（统一方法，支持不同类型的文件）
         
         Args:
             old_rev: 旧版本
             new_rev: 新版本
             file_path: 文件路径
             change_type: 变更类型 (A=新增, M=修改, D=删除)
+            review_type: 审查类型 (code/unity_asset等)，用于决定输出格式
             
         Returns:
             str: 文件diff或完整内容
         """
         try:
+            # 判断是否需要包含完整内容（asset类型需要）
+            include_full_content = (review_type == 'unity_asset')
+            file_type_label = "配置文件" if include_full_content else "文件"
+            
             if change_type == 'A':
-                # 新增文件：直接获取完整内容
+                # 新增文件：获取完整内容
                 content = self.git_handler.get_file_content(new_rev, file_path)
                 if content:
-                    return f"=== 新增文件 ===\n{file_path}\n\n{content}"
+                    return f"=== 新增{file_type_label} ===\n{file_path}\n\n{content}"
                 return ""
             elif change_type == 'M':
-                # 修改文件：获取diff
-                return self.git_handler.get_file_diff(old_rev, new_rev, file_path)
+                # 修改文件
+                if include_full_content:
+                    # asset类型：获取diff和完整内容
+                    old_content = self.git_handler.get_file_content(old_rev, file_path)
+                    new_content = self.git_handler.get_file_content(new_rev, file_path)
+                    
+                    if not new_content:
+                        return ""
+                    
+                    if not old_content:
+                        return f"=== 新增{file_type_label} ===\n{file_path}\n\n{new_content}"
+                    
+                    diff = self.git_handler.get_file_diff(old_rev, new_rev, file_path)
+                    
+                    result = f"=== {file_type_label}变更 ===\n{file_path}\n\n"
+                    if diff:
+                        result += f"变更说明:\n{diff}\n\n"
+                    result += f"完整配置内容:\n{new_content}"
+                    
+                    return result
+                else:
+                    # code类型：只返回diff
+                    return self.git_handler.get_file_diff(old_rev, new_rev, file_path)
             else:
-                # 其他情况也尝试获取diff
-                return self.git_handler.get_file_diff(old_rev, new_rev, file_path)
-        except Exception as e:
-            logger.error(f"获取代码内容失败 {file_path}: {e}")
-            return ""
-    
-    def _get_asset_content(self, old_rev: str, new_rev: str, file_path: str, change_type: str) -> str:
-        """
-        获取asset文件内容（包含变更标记）
-        
-        对于asset文件，我们需要完整内容来理解配置，同时标注变更部分
-        
-        Args:
-            old_rev: 旧版本
-            new_rev: 新版本
-            file_path: 文件路径
-            change_type: 变更类型 (A=新增, M=修改, D=删除)
-        """
-        try:
-            if change_type == 'A':
-                # 新增文件：只获取新内容
-                new_content = self.git_handler.get_file_content(new_rev, file_path)
-                if new_content:
-                    return f"=== 新增配置文件 ===\n{file_path}\n\n{new_content}"
-                return ""
-            elif change_type == 'M':
-                # 修改文件：获取新旧内容和diff
-                old_content = self.git_handler.get_file_content(old_rev, file_path)
-                new_content = self.git_handler.get_file_content(new_rev, file_path)
-                
-                if not new_content:
+                # 其他情况
+                if include_full_content:
                     return ""
-                
-                if not old_content:
-                    return f"=== 新增配置文件 ===\n{file_path}\n\n{new_content}"
-                
-                diff = self.git_handler.get_file_diff(old_rev, new_rev, file_path)
-                
-                result = f"=== 配置文件变更 ===\n{file_path}\n\n"
-                if diff:
-                    result += f"变更说明:\n{diff}\n\n"
-                result += f"完整配置内容:\n{new_content}"
-                
-                return result
-            else:
-                return ""
+                else:
+                    # code类型：尝试获取diff
+                    return self.git_handler.get_file_diff(old_rev, new_rev, file_path)
         except Exception as e:
-            logger.error(f"获取Asset内容失败 {file_path}: {e}")
+            logger.error(f"获取文件内容失败 {file_path}: {e}")
             return ""
     
     def _get_max_file_size(self, rule_name: str) -> int:

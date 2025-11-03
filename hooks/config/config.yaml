@@ -1,0 +1,15 @@
+# 客户端配置文件
+# 此文件用于配置客户端Git Hook行为
+
+# 客户端配置
+client:
+  # 审查机器地址（HTTP服务地址）
+  review_machine_url: "http://192.168.1.100:5000"
+  
+  # 要审查的分支列表（空列表表示审查所有分支）
+  review_branches:
+    - "MergeBattle"
+  
+  # 客户端hook日志文件路径（相对于仓库根目录）
+  log_file: "logs/client_hook.log"
+

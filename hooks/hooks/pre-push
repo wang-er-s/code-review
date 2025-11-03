@@ -1,0 +1,27 @@
+#!/bin/bash
+#
+# Git pre-push hook - 记录推送前状态
+#
+# 此脚本由Git自动调用，转发到Python脚本处理
+#
+
+# 获取脚本所在目录（.git/hooks）
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# 从.git/hooks向上两级到项目根目录
+# SCRIPT_DIR = 项目根目录/.git/hooks
+# 向上两级 = 项目根目录
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+# Python脚本路径：项目根目录/hooks/src/client_hook_handler.py
+PYTHON_SCRIPT="$PROJECT_ROOT/hooks/src/client_hook_handler.py"
+
+# 调用Python脚本
+if [ -f "$PYTHON_SCRIPT" ]; then
+    python "$PYTHON_SCRIPT" pre-push "$1" "$2"
+else
+    echo "警告: 找不到 client_hook_handler.py，跳过pre-push处理" >&2
+fi
+
+exit 0
+
